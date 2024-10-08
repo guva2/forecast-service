@@ -1,0 +1,76 @@
+Start the application by running:
+`docker compose up --build`.
+
+The application will be available at http://localhost:8000.
+
+Here's an example for how to test the endpoint with curl:
+curl -X 'GET'   'http://localhost:8000/forecast?latitude=39.7456&longitude=97.0892&date=2024-10-09&hour=24'   -H 'accept: application/json'
+
+The codebase is split up into 4 files:
+- nws.py that implements a simple client for the NWS API
+- config.py that implements all of the env var configuration
+- db.py that includes db initialization, db models, and db operations
+- app.py that pieces everything together with the single api endpoint
+  and the cron job that fetches the weather data
+
+Next I'll discuss how I approached each requirement. The numbers directly
+correspond to the requirements numbering from the problem statement.
+
+1 & 2. The application accepts a lat and long which define the point for
+which the application fetches weather data. Latitude and longitude are
+required. These values, along with some other env vars, are configured
+through the .env file. Note that the cron job naively runs every N minutes,
+but it would be cleaner if it normalized execution times. I went with the
+simpler approach for the sake of simplicity, and didn't have time to 
+revisit the implementation.
+
+2. The application accepts an otional interval in minutes which defines
+how often to hit the NWS API. I used APScheduler to run a simple fetch
+task every N minutes. The task queries the NWS API for the upcoming hourly
+forecast for the configured latitude and longitude. If I had more time
+I would add more sophisticated error handling (retries with backoff) and
+more sophisticated data parsing and validation. Also, each task execution
+hits the API twice: once to get the point for a lat/long, once to get the
+forecast for a point. This could be improved by only retrieving the point
+once, then only querying for the forecast in each execution thereafter.
+
+3. I used PostgreSQL because it's simple, agile, and well supported. 
+When I selected it, I was thinking about using TimescaleDB but I didn't 
+want to start off with that implementation because I've never used
+TimescaleDB. My plan was to set up Postgres, and then try migrating to
+TimescaleDB if I had extra time. TimescaleDB is a natural choice because
+it's designed for time series data. PostgreSQL is definitely sufficient
+for this exercise, and it allows for easy migration to TimescaleDB if
+needed in the future.
+
+4. I added a get_forecast endpoint that accepts latitude and longitude as
+floats, date, and a UTC hour of day. The endpoint has custom validation to
+ensure that lat/long and hour of day are valid.
+
+5. The endpoint is implemented with an aggregate query. It gets the min/max
+temperatures for all rows in the db that match the given lat/long/datetime.
+
+6. The application includes a docker file with all necessary config for the
+app itself and for the underlying database.
+
+7. Here is the README :). I've included a single command up top to build and
+run the app; that should be all you need.
+
+8. A key assumption throughout my implementation was that simplicity was my top
+priority. I wanted to build something functional, then iterate on it if there
+was extra time. It worked out because inevitably I ran out of time. Inversely,
+I assumed scalability, security, testing, monitoring, and logging were not
+priorities. Given the problem statement, I assumed that we only wanted to run
+one scheduled execution at a time. I considered implementing support for N
+different json files, with each json file holding config details for a separate
+cron job. Ultimately, the requirements only explicitly asked for one so I went
+with the simplest option. I also assumed that we wanted to store some data for
+each forecast query. Although we only care about the min/max, the instructions
+clearly stated to store the set of hourly temperature forecasts for the next 72
+hours. I think there are some different tradeoffs to consider here depending on
+the motives behind the requirement, but in the end I decided it would be best
+to follow the instructions as closely as possible. Lastly, I figured part of this
+exercise was intended to measure my agility and ability to use new technologies.
+That's actually why I chose to use FastAPI. It has a reputation for being very
+simple and agile, and I had never used it before. I wanted to demonstrate that
+I could select a framework for its qualities, then pick it up on the fly.
